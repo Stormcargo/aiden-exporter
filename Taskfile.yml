@@ -1,0 +1,57 @@
+version: "3"
+
+dotenv: [".env"]
+
+vars:
+  IMAGE: aiden-exporter
+  TAG: latest
+
+tasks:
+  sync:
+    desc: Install all dependencies (including dev) with UV
+    cmds:
+      - uv sync --dev
+
+  run:
+    desc: Run exporter locally (requires .env or exported vars)
+    deps: [sync]
+    cmds:
+      - uv run python exporter.py
+
+  test:
+    desc: Run pytest
+    deps: [sync]
+    cmds:
+      - uv run pytest -v --tb=short
+
+  fmt:
+    desc: Format code with ruff
+    deps: [sync]
+    cmds:
+      - uv run ruff format .
+
+  lint:
+    desc: Lint and format-check with ruff
+    deps: [sync]
+    cmds:
+      - uv run ruff check .
+      - uv run ruff format --check .
+
+  build:
+    desc: Build Docker image
+    cmds:
+      - docker build -t {{.IMAGE}}:{{.TAG}} .
+
+  docker-run:
+    desc: Run exporter in Docker (requires .env)
+    deps: [build]
+    cmds:
+      - docker run --rm
+          --env-file .env
+          -p "${EXPORTER_PORT:-9090}:${EXPORTER_PORT:-9090}"
+          {{.IMAGE}}:{{.TAG}}
+
+  metrics:
+    desc: Curl the metrics endpoint
+    cmds:
+      - curl -s http://localhost:${EXPORTER_PORT:-9090}/metrics | grep fellow_aiden
