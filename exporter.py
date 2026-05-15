@@ -1,14 +1,11 @@
 import json
-import logging
 import os
 import threading
 import time
 
 from fellow_aiden import FellowAiden
+from loguru import logger
 from prometheus_client import Gauge, start_http_server
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-log = logging.getLogger(__name__)
 
 LABELS = ["brewer_name"]
 
@@ -116,17 +113,17 @@ def poll_loop(aiden: PatchedFellowAiden, brewer_name: str, interval: int) -> Non
     while True:
         try:
             update_metrics(aiden, brewer_name)
-            log.info("Poll succeeded")
+            logger.info("Poll succeeded")
         except Exception as e:
             msg = str(e).lower()
             if "email or password" in msg or "incorrect" in msg or "unauthorized" in msg:
-                log.warning("Auth error, reauthenticating: %s", e)
+                logger.warning("Auth error, reauthenticating: {}", e)
                 try:
                     aiden.authenticate()
                 except Exception as re:
-                    log.error("Reauthentication failed: %s", re)
+                    logger.error("Reauthentication failed: {}", re)
             else:
-                log.error("Poll failed: %s", e)
+                logger.error("Poll failed: {}", e)
             SCRAPE_SUCCESS.labels(brewer_name).set(0)
         time.sleep(interval)
 
@@ -140,16 +137,16 @@ def main() -> None:
     if not email or not password:
         raise SystemExit("FELLOW_EMAIL and FELLOW_PASSWORD environment variables are required")
 
-    log.info("Authenticating with Fellow API")
+    logger.info("Authenticating with Fellow API")
     aiden = PatchedFellowAiden(email, password)
     brewer_name = aiden.get_display_name()
-    log.info("Connected to brewer: %s", brewer_name)
+    logger.info("Connected to brewer: {}", brewer_name)
 
     t = threading.Thread(target=poll_loop, args=(aiden, brewer_name, interval), daemon=True)
     t.start()
 
     start_http_server(port)
-    log.info("Exporter running on :%d (scrape interval: %ds)", port, interval)
+    logger.info("Exporter running on :{} (scrape interval: {}s)", port, interval)
 
     while True:
         time.sleep(3600)
