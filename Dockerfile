@@ -24,8 +24,11 @@ USER exporter
 COPY --from=builder --chown=exporter:exporter /app/.venv /app/.venv
 COPY --from=builder --chown=exporter:exporter /app/exporter.py /app/exporter.py
 
+ARG VERSION=dev
 ENV PATH="/app/.venv/bin:$PATH" \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    APP_VERSION=${VERSION}
 
 EXPOSE 9090
 

@@ -1,11 +1,13 @@
 import json
 import os
+import signal
 import threading
 import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from fellow_aiden import FellowAiden
 from loguru import logger
-from prometheus_client import Gauge, start_http_server
+from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Gauge, generate_latest
 
 LABELS = ["brewer_name"]
 
@@ -45,6 +47,9 @@ BREW_END_TS = Gauge(
 PROFILES_COUNT = Gauge("fellow_aiden_profiles_count", "Number of brew profiles", LABELS)
 SCHEDULES_COUNT = Gauge("fellow_aiden_schedules_count", "Number of configured schedules", LABELS)
 SCRAPE_SUCCESS = Gauge("fellow_aiden_scrape_success", "1 if last poll succeeded", LABELS)
+SCRAPE_DURATION = Gauge(
+    "fellow_aiden_scrape_duration_seconds", "Duration of the last API poll in seconds", LABELS
+)
 LAST_SCRAPE_TS = Gauge(
     "fellow_aiden_last_scrape_timestamp_seconds", "Unix timestamp of last successful scrape", LABELS
 )
@@ -77,6 +82,39 @@ LAST_BREW_PROFILE_INFO = Gauge(
     "Info about the last used brew profile",
     LABELS + ["profile_id", "profile_name"],
 )
+EXPORTER_INFO = Gauge(
+    "fellow_aiden_exporter_info",
+    "Exporter build info",
+    ["version"],
+)
+
+_ready = threading.Event()
+_shutdown = threading.Event()
+
+
+class _Handler(BaseHTTPRequestHandler):
+    def log_message(self, fmt, *args):  # suppress per-request access log
+        pass
+
+    def do_GET(self):
+        if self.path == "/healthz":
+            self._text(200, b"ok")
+        elif self.path == "/readyz":
+            self._text(200, b"ok") if _ready.is_set() else self._text(503, b"not ready")
+        elif self.path in ("/metrics", "/"):
+            output = generate_latest(REGISTRY)
+            self.send_response(200)
+            self.send_header("Content-Type", CONTENT_TYPE_LATEST)
+            self.end_headers()
+            self.wfile.write(output)
+        else:
+            self._text(404, b"not found")
+
+    def _text(self, status: int, body: bytes) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(body)
 
 
 class PatchedFellowAiden(FellowAiden):
@@ -90,6 +128,10 @@ class PatchedFellowAiden(FellowAiden):
         if response.status_code == 401:
             self._FellowAiden__auth()
             response = self.SESSION.get(device_url, params={"dataType": "real"})
+        if response.status_code == 429:
+            retry_after = response.headers.get("Retry-After", "unknown")
+            logger.warning("Rate limited by Fellow API (Retry-After: {}s)", retry_after)
+            raise Exception("rate limited")
         parsed = json.loads(response.content)
         self._device_config = parsed[0]
         self._brewer_id = self._device_config["id"]
@@ -107,11 +149,23 @@ class PatchedFellowAiden(FellowAiden):
     def _fetch_profiles(self) -> list:
         url = self.BASE_URL + self.API_PROFILES.format(id=self._brewer_id)
         r = self.SESSION.get(url)
+        if r.status_code == 429:
+            logger.warning(
+                "Rate limited fetching profiles (Retry-After: {}s)",
+                r.headers.get("Retry-After", "unknown"),
+            )
+            return []
         return json.loads(r.content) if r.status_code == 200 else []
 
     def _fetch_schedules(self) -> list:
         url = self.BASE_URL + self.API_SCHEDULES.format(id=self._brewer_id)
         r = self.SESSION.get(url)
+        if r.status_code == 429:
+            logger.warning(
+                "Rate limited fetching schedules (Retry-After: {}s)",
+                r.headers.get("Retry-After", "unknown"),
+            )
+            return []
         return json.loads(r.content) if r.status_code == 200 else []
 
 
@@ -124,6 +178,7 @@ def _opt_float(val) -> float:
 
 
 def update_metrics(aiden: PatchedFellowAiden, brewer_name: str) -> None:
+    start = time.monotonic()
     config = aiden.get_device_config(remote=True)
     profiles = aiden.get_profiles()
     schedules = aiden.get_schedules()
@@ -183,14 +238,31 @@ def update_metrics(aiden: PatchedFellowAiden, brewer_name: str) -> None:
             str(last_brew_profile.get("title", "")),
         ).set(1)
 
+    SCRAPE_DURATION.labels(n).set(time.monotonic() - start)
     SCRAPE_SUCCESS.labels(n).set(1)
     LAST_SCRAPE_TS.labels(n).set(time.time())
 
 
+def _handle_shutdown(*_) -> None:
+    _ready.clear()  # fail readyz immediately so k8s stops routing traffic
+    _shutdown.set()
+
+
 def poll_loop(aiden: PatchedFellowAiden, brewer_name: str, interval: int) -> None:
+    prev_brewing: bool | None = None
     while True:
         try:
             update_metrics(aiden, brewer_name)
+            _ready.set()
+
+            curr_brewing = bool(aiden.get_device_config().get("brewing"))
+            if prev_brewing is not None and curr_brewing != prev_brewing:
+                if curr_brewing:
+                    logger.info("Brew started on {}", brewer_name)
+                else:
+                    logger.info("Brew finished on {}", brewer_name)
+            prev_brewing = curr_brewing
+
             logger.info("Poll succeeded")
         except Exception as e:
             msg = str(e).lower()
@@ -215,19 +287,25 @@ def main() -> None:
     if not email or not password:
         raise SystemExit("FELLOW_EMAIL and FELLOW_PASSWORD environment variables are required")
 
+    EXPORTER_INFO.labels(version=os.environ.get("APP_VERSION", "dev")).set(1)
+
+    signal.signal(signal.SIGTERM, _handle_shutdown)
+    signal.signal(signal.SIGINT, _handle_shutdown)
+
     logger.info("Authenticating with Fellow API")
     aiden = PatchedFellowAiden(email, password)
     brewer_name = aiden.get_display_name()
     logger.info("Connected to brewer: {}", brewer_name)
 
-    t = threading.Thread(target=poll_loop, args=(aiden, brewer_name, interval), daemon=True)
-    t.start()
+    threading.Thread(target=poll_loop, args=(aiden, brewer_name, interval), daemon=True).start()
 
-    start_http_server(port)
+    server = HTTPServer(("", port), _Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
     logger.info("Exporter running on :{} (scrape interval: {}s)", port, interval)
 
-    while True:
-        time.sleep(3600)
+    _shutdown.wait()
+    logger.info("Shutting down")
+    server.shutdown()
 
 
 if __name__ == "__main__":

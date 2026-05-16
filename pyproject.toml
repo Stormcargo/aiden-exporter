@@ -11,11 +11,17 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "pytest-cov>=7.1.0",
     "ruff>=0.9",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--cov=exporter --cov-report=term-missing"
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
