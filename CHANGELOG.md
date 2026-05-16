@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.3.0 (2026-05-16)
+
+### Features
+
+- Expose last brew profile
+  ([`b634104`](https://github.com/Stormcargo/aiden-exporter/commit/b634104cf8c94f4cd40bdff01f139cf92d2f750c))
+
+
 ## v0.2.3 (2026-05-16)
 
 ### Bug Fixes
