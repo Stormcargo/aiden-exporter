@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.2.3 (2026-05-16)
+
+### Bug Fixes
+
+- More releasing
+  ([`ffd448c`](https://github.com/Stormcargo/aiden-exporter/commit/ffd448cb03748b300842567c2af8d6b3fb0312b4))
+
+
 ## v0.2.2 (2026-05-16)
 
 ### Bug Fixes
