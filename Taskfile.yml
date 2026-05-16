@@ -4,7 +4,8 @@ dotenv: [".env"]
 
 vars:
   IMAGE: aiden-exporter
-  TAG: latest
+  TAG:
+    sh: git describe --tags --abbrev=0 2>/dev/null || echo "dev"
 
 tasks:
   sync:

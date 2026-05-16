@@ -73,6 +73,8 @@ jobs:
         id: meta
         with:
           images: ghcr.io/${{ github.repository }}
+          flavor: |
+            latest=false
           tags: |
             type=semver,pattern=v{{version}},value=${{ needs.release.outputs.tag }}
             type=semver,pattern=v{{major}}.{{minor}},value=${{ needs.release.outputs.tag }}
