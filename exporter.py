@@ -18,9 +18,22 @@ SS_BASKET = Gauge(
     "fellow_aiden_single_brew_basket_present", "1 if single-serve basket present", LABELS
 )
 BATCH_BASKET = Gauge("fellow_aiden_batch_brew_basket_present", "1 if batch basket present", LABELS)
+PUMP_ON = Gauge("fellow_aiden_pump_on", "1 if pump is active", LABELS)
+CLEANING = Gauge("fellow_aiden_cleaning", "1 if cleaning cycle active", LABELS)
+RINSING = Gauge("fellow_aiden_rinsing", "1 if rinsing cycle active", LABELS)
+SHOWER_HEAD_PRESENT = Gauge("fellow_aiden_shower_head_present", "1 if shower head present", LABELS)
+CLOUD_CONNECTED = Gauge("fellow_aiden_cloud_connected", "1 if connected to Fellow cloud", LABELS)
+BREWING_TEMP = Gauge(
+    "fellow_aiden_brewing_water_temperature_c",
+    "Current brewing water temperature (°C; NaN when not brewing)",
+    LABELS,
+)
 TOTAL_WATER_ML = Gauge("fellow_aiden_total_water_volume_ml", "Lifetime water used (mL)", LABELS)
 LAST_BREW_WATER_ML = Gauge(
     "fellow_aiden_last_brew_water_volume_ml", "Last brew water volume (mL)", LABELS
+)
+WATER_QUANTITY_ML = Gauge(
+    "fellow_aiden_water_quantity_ml", "Current water quantity setting (mL)", LABELS
 )
 TOTAL_BREW_CYCLES = Gauge("fellow_aiden_total_brew_cycles", "Total brew cycle count", LABELS)
 BREW_START_TS = Gauge(
@@ -35,7 +48,30 @@ SCRAPE_SUCCESS = Gauge("fellow_aiden_scrape_success", "1 if last poll succeeded"
 LAST_SCRAPE_TS = Gauge(
     "fellow_aiden_last_scrape_timestamp_seconds", "Unix timestamp of last successful scrape", LABELS
 )
-DEVICE_INFO = Gauge("fellow_aiden_device_info", "Device info", LABELS + ["selected_profile_id"])
+DEVICE_INFO = Gauge(
+    "fellow_aiden_device_info",
+    "Device info",
+    LABELS + ["selected_profile_id", "selected_profile_name", "firmware_version", "serial_number"],
+)
+PROFILE_RATIO = Gauge("fellow_aiden_active_profile_ratio", "Active profile brew ratio", LABELS)
+PROFILE_TEMP = Gauge(
+    "fellow_aiden_active_profile_temperature_c",
+    "Active profile target brew temperature (°C; NaN if not set)",
+    LABELS,
+)
+PROFILE_BLOOM_ENABLED = Gauge(
+    "fellow_aiden_active_profile_bloom_enabled", "1 if active profile has bloom enabled", LABELS
+)
+PROFILE_BLOOM_TEMP = Gauge(
+    "fellow_aiden_active_profile_bloom_temperature_c",
+    "Active profile bloom temperature (°C; NaN if bloom disabled)",
+    LABELS,
+)
+PROFILE_BLOOM_DURATION = Gauge(
+    "fellow_aiden_active_profile_bloom_duration_seconds",
+    "Active profile bloom duration (seconds; NaN if bloom disabled)",
+    LABELS,
+)
 
 
 class PatchedFellowAiden(FellowAiden):
@@ -78,6 +114,10 @@ def _bool(val) -> float:
     return 1.0 if val else 0.0
 
 
+def _opt_float(val) -> float:
+    return float(val) if val is not None else float("nan")
+
+
 def update_metrics(aiden: PatchedFellowAiden, brewer_name: str) -> None:
     config = aiden.get_device_config(remote=True)
     profiles = aiden.get_profiles()
@@ -92,9 +132,16 @@ def update_metrics(aiden: PatchedFellowAiden, brewer_name: str) -> None:
     MISSING_WATER.labels(n).set(_bool(config.get("missingWater")))
     SS_BASKET.labels(n).set(_bool(config.get("singleBrewBasketPresent")))
     BATCH_BASKET.labels(n).set(_bool(config.get("batchBrewBasketPresent")))
+    PUMP_ON.labels(n).set(_bool(config.get("pumpOn")))
+    CLEANING.labels(n).set(_bool(config.get("cleaning")))
+    RINSING.labels(n).set(_bool(config.get("rinsing")))
+    SHOWER_HEAD_PRESENT.labels(n).set(_bool(config.get("showerHeadPresent")))
+    CLOUD_CONNECTED.labels(n).set(_bool(config.get("isConnected")))
 
+    BREWING_TEMP.labels(n).set(_opt_float(config.get("brewingWaterTemperatureC")))
     TOTAL_WATER_ML.labels(n).set(float(config.get("totalWaterVolumeL", 0)))
     LAST_BREW_WATER_ML.labels(n).set(float(config.get("brewingWaterVolumeMl", 0)))
+    WATER_QUANTITY_ML.labels(n).set(float(config.get("ibWaterQuantity", 0)))
     TOTAL_BREW_CYCLES.labels(n).set(float(config.get("totalBrewingCycles", 0)))
     BREW_START_TS.labels(n).set(float(config.get("brewStartTime") or 0))
     BREW_END_TS.labels(n).set(float(config.get("brewEndTime") or 0))
@@ -103,7 +150,20 @@ def update_metrics(aiden: PatchedFellowAiden, brewer_name: str) -> None:
     SCHEDULES_COUNT.labels(n).set(len(schedules))
 
     selected_profile = str(config.get("ibSelectedProfileId", ""))
-    DEVICE_INFO.labels(n, selected_profile).set(1)
+    active_profile = next(
+        (p for p in profiles if str(p.get("id")) == selected_profile),
+        {},
+    )
+    profile_name = str(active_profile.get("title", selected_profile))
+    firmware = str(config.get("firmwareVersion", ""))
+    serial = str(config.get("serialNumber", ""))
+    DEVICE_INFO.labels(n, selected_profile, profile_name, firmware, serial).set(1)
+
+    PROFILE_RATIO.labels(n).set(_opt_float(active_profile.get("ratio")))
+    PROFILE_TEMP.labels(n).set(_opt_float(active_profile.get("overallTemperature")))
+    PROFILE_BLOOM_ENABLED.labels(n).set(_bool(active_profile.get("bloomEnabled")))
+    PROFILE_BLOOM_TEMP.labels(n).set(_opt_float(active_profile.get("bloomTemperature")))
+    PROFILE_BLOOM_DURATION.labels(n).set(_opt_float(active_profile.get("bloomDuration")))
 
     SCRAPE_SUCCESS.labels(n).set(1)
     LAST_SCRAPE_TS.labels(n).set(time.time())
