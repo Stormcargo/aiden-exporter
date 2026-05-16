@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.4.0 (2026-05-16)
+
+### Features
+
+- Add k8s helper functions
+  ([`92883a0`](https://github.com/Stormcargo/aiden-exporter/commit/92883a096392fdc62016b72764610ec8630a08c7))
+
+
 ## v0.3.0 (2026-05-16)
 
 ### Features
