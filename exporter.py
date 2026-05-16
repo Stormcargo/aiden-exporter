@@ -72,6 +72,11 @@ PROFILE_BLOOM_DURATION = Gauge(
     "Active profile bloom duration (seconds; NaN if bloom disabled)",
     LABELS,
 )
+LAST_BREW_PROFILE_INFO = Gauge(
+    "fellow_aiden_last_brew_profile_info",
+    "Info about the last used brew profile",
+    LABELS + ["profile_id", "profile_name"],
+)
 
 
 class PatchedFellowAiden(FellowAiden):
@@ -164,6 +169,19 @@ def update_metrics(aiden: PatchedFellowAiden, brewer_name: str) -> None:
     PROFILE_BLOOM_ENABLED.labels(n).set(_bool(active_profile.get("bloomEnabled")))
     PROFILE_BLOOM_TEMP.labels(n).set(_opt_float(active_profile.get("bloomTemperature")))
     PROFILE_BLOOM_DURATION.labels(n).set(_opt_float(active_profile.get("bloomDuration")))
+
+    last_brew_profile = max(
+        (p for p in profiles if (p.get("lastUsedTime") or 0) > 0),
+        key=lambda p: p.get("lastUsedTime", 0),
+        default={},
+    )
+    LAST_BREW_PROFILE_INFO.clear()
+    if last_brew_profile:
+        LAST_BREW_PROFILE_INFO.labels(
+            n,
+            str(last_brew_profile.get("id", "")),
+            str(last_brew_profile.get("title", "")),
+        ).set(1)
 
     SCRAPE_SUCCESS.labels(n).set(1)
     LAST_SCRAPE_TS.labels(n).set(time.time())
