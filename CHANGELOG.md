@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.2.0 (2026-05-16)
+
+### Features
+
+- **metrics**: Add new metrics
+  ([`f1c2b27`](https://github.com/Stormcargo/aiden-exporter/commit/f1c2b2715eb0ae0e1a0d6771afce28d899a447bf))
+
+
 ## v0.1.0 (2026-05-15)
 
 ### Bug Fixes
