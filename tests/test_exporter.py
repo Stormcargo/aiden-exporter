@@ -382,7 +382,7 @@ class TestPollLoop:
         """Run poll_loop for exactly one iteration by making time.sleep raise."""
         monkeypatch.setattr("exporter.time.sleep", MagicMock(side_effect=StopIteration))
         with pytest.raises(StopIteration):
-            exporter.poll_loop(aiden, brewer, 15)
+            exporter.poll_loop(aiden, brewer, 60)
 
     def test_sets_ready_on_success(self, monkeypatch):
         aiden = make_aiden()
@@ -430,7 +430,7 @@ class TestPollLoop:
 
         monkeypatch.setattr("exporter.time.sleep", fake_sleep)
         with pytest.raises(StopIteration):
-            exporter.poll_loop(aiden, brewer, 15)
+            exporter.poll_loop(aiden, brewer, 60)
 
     def test_logs_brew_started(self, monkeypatch):
         aiden = make_aiden()

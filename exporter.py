@@ -250,19 +250,22 @@ def _handle_shutdown(*_) -> None:
 
 def poll_loop(aiden: PatchedFellowAiden, brewer_name: str, interval: int) -> None:
     prev_brewing: bool | None = None
+
     while True:
         try:
             update_metrics(aiden, brewer_name)
             _ready.set()
 
-            curr_brewing = bool(aiden.get_device_config().get("brewing"))
+            config = aiden.get_device_config()
+            curr_brewing = bool(config.get("brewing"))
+
             if prev_brewing is not None and curr_brewing != prev_brewing:
                 if curr_brewing:
                     logger.info("Brew started on {}", brewer_name)
                 else:
                     logger.info("Brew finished on {}", brewer_name)
-            prev_brewing = curr_brewing
 
+            prev_brewing = curr_brewing
             logger.info("Poll succeeded")
         except Exception as e:
             msg = str(e).lower()
