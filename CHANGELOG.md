@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.4.1 (2026-05-17)
+
+### Bug Fixes
+
+- Tidy and lock
+  ([`13fe906`](https://github.com/Stormcargo/aiden-exporter/commit/13fe906b8b3a10a4b98f4d3f681fcede87bfdfcd))
+
+
 ## v0.4.0 (2026-05-16)
 
 ### Features
